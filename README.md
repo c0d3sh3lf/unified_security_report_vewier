@@ -1,0 +1,127 @@
+# Unified Security Reports Viewer
+
+Sentinel Reports is a secure, self-hostable dashboard for consolidating Trivy and Semgrep JSON scan reports from Jenkins pipelines or manual uploads. It uses role-scoped access, short-lived JWT sessions, one-time-revealed API keys, normalized findings, and live dashboard polling.
+
+## Project structure
+
+```text
+.
+├── backend/
+│   └── src/
+│       ├── config/          validated environment configuration
+│       ├── controllers/     HTTP response coordination
+│       ├── middleware/      authentication, validation, error handling
+│       ├── models/          MongoDB schemas
+│       ├── repositories/    database access layer
+│       ├── routes/          API route declarations
+│       ├── services/        auth, ingestion, parsers, business rules
+│       └── validators/      Zod request contracts
+├── frontend/
+│   └── src/                 React dashboard and API client
+├── k8s/                     Kubernetes namespace, config, application manifests
+├── sample_outputs/          supplied Semgrep and Trivy reports
+├── docker-compose.yml       local full-stack environment
+└── Jenkinsfile              build, test, image publication, Kubernetes deployment
+```
+
+## Features
+
+- Local username/password authentication with signed JWTs.
+- Default administrator bootstrap on backend initialization.
+- Administrator and normal-user roles with database-level ownership filtering.
+- API keys stored only as SHA-256 hashes, with per-key expiry, revocation, and last-use tracking.
+- Ingestion endpoint designed for Jenkins (`X-API-Key`), plus manual JSON uploads.
+- Trivy container/filesystem report and Semgrep report normalization into a common finding model.
+- Dashboard totals and pipeline summaries automatically refresh every 30 seconds.
+- Responsive glassmorphism interface for overview, scan detail, uploads, keys, users, and profile settings.
+
+## Local setup
+
+1. Use Node.js 22 or newer and Docker Desktop. Copy the environment file and set a unique JWT secret and administrator password:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   `JWT_SECRET` must be at least 32 characters. `DEFAULT_ADMIN_PASSWORD` must be changed before any non-local deployment.
+
+2. Install dependencies and run the application in development mode:
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+   Start MongoDB separately with `docker compose up mongo`, or use an accessible `MONGO_URI` in `.env`.
+
+3. Open `http://localhost:5173`. The first backend startup creates the configured default administrator only when its email address does not already exist.
+
+4. To run the full stack in containers:
+
+   ```bash
+   docker compose --env-file .env up --build
+   ```
+
+   The UI is served at `http://localhost:8080` and the health endpoint is `http://localhost:4000/health`.
+
+## Tests and build
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+The parser unit test validates normalisation of representative Trivy and Semgrep structures. To manually validate supplied outputs, log in, open **Upload**, choose the scanner, and upload one of the JSON files under `sample_outputs/`.
+
+## Jenkins ingestion
+
+Create an API key from **API keys** in the UI. Store the revealed value in Jenkins Credentials as a secret text credential called `security-reports-api-key`. A pipeline can submit a report as follows:
+
+```groovy
+withCredentials([string(credentialsId: 'security-reports-api-key', variable: 'REPORTS_API_KEY')]) {
+  sh '''
+    jq -n --slurpfile report trivy.json '{
+      pipeline: env.JOB_NAME,
+      buildNumber: env.BUILD_NUMBER,
+      branch: env.BRANCH_NAME,
+      commit: env.GIT_COMMIT,
+      buildUrl: env.BUILD_URL,
+      tool: "trivy",
+      report: $report[0]
+    }' | curl --fail-with-body --request POST "$SECURITY_REPORTS_URL/api/ingest" \
+      --header "Content-Type: application/json" \
+      --header "X-API-Key: $REPORTS_API_KEY" \
+      --data-binary @-
+  '''
+}
+```
+
+Use `tool: "semgrep"` and a Semgrep JSON report for Semgrep. The ingest endpoint rejects expired/revoked keys and unsupported report formats.
+
+## API summary
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/auth/login` | public | Obtain JWT session |
+| GET/PATCH | `/api/auth/me` | authenticated | Read or update profile/password |
+| GET/POST/DELETE | `/api/api-keys` | authenticated | Manage own API keys |
+| POST | `/api/ingest` | API key | Jenkins scanner report ingestion |
+| POST/GET | `/api/scans` | authenticated | Manual upload or list scoped reports |
+| GET | `/api/scans/:id` | authenticated | Read a scoped report and findings |
+| GET | `/api/dashboard/overview` | authenticated | Severity and report totals |
+| GET | `/api/dashboard/pipelines` | authenticated | Pipeline aggregates |
+| GET/POST | `/api/users` | administrator | List and create users |
+
+## Deployment checklist
+
+- [ ] Build images from the supplied Dockerfiles and publish immutable, tagged images to Docker Hub.
+- [ ] Create a Kubernetes Secret from values equivalent to `k8s/config.example.yaml`; do not commit real production secrets.
+- [ ] Set a production MongoDB URI with authentication, encryption in transit, backup, and restricted network access.
+- [ ] Configure an HTTPS ingress in front of `reports-frontend`; set `CORS_ORIGIN` to its exact public origin.
+- [ ] Replace the default bootstrap administrator password and confirm the administrator can sign in.
+- [ ] Configure Jenkins credentials for Docker Hub, the Kubernetes kubeconfig, and a reports ingestion API key.
+- [ ] Set `IMAGE_PREFIX` in `Jenkinsfile` to the Docker Hub namespace and ensure the cluster can pull these images.
+- [ ] Apply `k8s/namespace.yaml`, create the configuration Secret/ConfigMap, then deploy rendered `k8s/app.yaml`.
+- [ ] Verify `/health`, protected API access, ingestion rejection after key expiry, and the dashboard through the ingress.
+- [ ] Configure MongoDB backups, application log collection, image vulnerability scanning, and routine dependency updates.

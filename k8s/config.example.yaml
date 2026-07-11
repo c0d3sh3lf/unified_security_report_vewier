@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: security-reports-secrets
+  namespace: security-reports
+type: Opaque
+stringData:
+  MONGO_URI: mongodb://mongo.security-reports.svc.cluster.local:27017/security_reports
+  JWT_SECRET: replace-this-with-a-long-random-secret
+  DEFAULT_ADMIN_PASSWORD: replace-this-on-first-deployment
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-reports-config
+  namespace: security-reports
+data:
+  API_PORT: "4000"
+  JWT_EXPIRES_IN: "8h"
+  CORS_ORIGIN: "https://reports.example.com"
+  DEFAULT_ADMIN_NAME: "Platform Administrator"
+  DEFAULT_ADMIN_EMAIL: "admin@example.com"

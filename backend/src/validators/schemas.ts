@@ -1,0 +1,7 @@
+import { z } from 'zod';
+const strongPassword = z.string().min(12).max(128).regex(/[a-z]/, 'Password needs a lowercase letter').regex(/[A-Z]/, 'Password needs an uppercase letter').regex(/[0-9]/, 'Password needs a number');
+export const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1).max(128) });
+export const profileSchema = z.object({ name: z.string().trim().min(2).max(80).optional(), email: z.string().email().optional(), currentPassword: z.string().min(1).max(128).optional(), newPassword: strongPassword.optional() }).refine((data) => Object.keys(data).length > 0, 'Provide at least one change').refine((data) => !data.newPassword || Boolean(data.currentPassword), 'Current password is required to set a new password');
+export const createUserSchema = z.object({ name: z.string().trim().min(2).max(80), email: z.string().email(), password: strongPassword, role: z.enum(['admin', 'user']) });
+export const createApiKeySchema = z.object({ label: z.string().trim().min(2).max(80), expiresAt: z.iso.datetime().optional().nullable() });
+export const ingestSchema = z.object({ pipeline: z.string().trim().min(1).max(160), buildNumber: z.string().trim().max(100).optional(), branch: z.string().trim().max(160).optional(), commit: z.string().trim().max(100).optional(), buildUrl: z.string().url().max(2048).optional(), tool: z.enum(['trivy', 'semgrep']).optional(), report: z.unknown() });
