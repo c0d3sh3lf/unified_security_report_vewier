@@ -50,11 +50,13 @@ function Profile({ user, onChange }: { user: User; onChange: (value: User) => vo
 }
 function App() {
   const [user, setUser] = useState<User | null>(null); const [page, setPage] = useState<Page>('dashboard'); const [selected, setSelected] = useState<Scan | null>(null);
+  const client = useQueryClient();
   const session = useQuery({ queryKey: ['me'], queryFn: api.me, enabled: Boolean(localStorage.getItem('sentinel_token')), retry: false });
   const activeUser = user ?? session.data;
   if (!activeUser) return <Login onLoggedIn={setUser} />;
   const navigation: Array<[Page, string]> = [['dashboard', 'Overview'], ['scans', 'Scans'], ['upload', 'Upload'], ['keys', 'API keys'], ['profile', 'Profile'], ...(activeUser.role === 'admin' ? [['users', 'Users'] as [Page, string]] : [])];
   const openScan = (scan: Scan) => { setSelected(scan); setPage('scans'); };
-  return <div className="app-shell"><aside className="sidebar"><div className="logo"><span className="brand-mark">S</span><span>Sentinel<span>Reports</span></span></div><nav>{navigation.map(([target, label]) => <button className={page === target ? 'active' : ''} onClick={() => setPage(target)} key={target}>{label}</button>)}</nav><div className="account"><strong>{activeUser.name}</strong><small>{activeUser.role === 'admin' ? 'Administrator' : 'Normal user'}</small><button onClick={() => { setToken(''); setUser(null); }}>Sign out</button></div></aside><main className="content">{page === 'dashboard' && <Dashboard onOpenScan={openScan} />}{page === 'scans' && <Scans selected={selected} onOpen={openScan} />}{page === 'upload' && <Upload />}{page === 'keys' && <ApiKeys />}{page === 'users' && activeUser.role === 'admin' && <Users />}{page === 'profile' && <Profile user={activeUser} onChange={setUser} />}</main></div>;
+  const signOut = () => { setToken(''); client.removeQueries(); setSelected(null); setPage('dashboard'); setUser(null); };
+  return <div className="app-shell"><aside className="sidebar"><div className="logo"><span className="brand-mark">S</span><span>Sentinel<span>Reports</span></span></div><nav>{navigation.map(([target, label]) => <button className={page === target ? 'active' : ''} onClick={() => setPage(target)} key={target}>{label}</button>)}</nav><div className="account"><strong>{activeUser.name}</strong><small>{activeUser.role === 'admin' ? 'Administrator' : 'Normal user'}</small><button onClick={signOut}>Sign out</button></div></aside><main className="content">{page === 'dashboard' && <Dashboard onOpenScan={openScan} />}{page === 'scans' && <Scans selected={selected} onOpen={openScan} />}{page === 'upload' && <Upload />}{page === 'keys' && <ApiKeys />}{page === 'users' && activeUser.role === 'admin' && <Users />}{page === 'profile' && <Profile user={activeUser} onChange={setUser} />}</main></div>;
 }
 export default App;
