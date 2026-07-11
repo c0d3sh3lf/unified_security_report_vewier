@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Local runs keep configuration at the monorepo root; injected container values remain authoritative.
+const rootEnvironmentFile = resolve(process.cwd(), '../.env');
+if (existsSync(rootEnvironmentFile)) dotenv.config({ path: rootEnvironmentFile, override: false, quiet: true });
+dotenv.config({ override: false, quiet: true });
 
 const environmentSchema = z.object({
   MONGO_URI: z.string().url(),
