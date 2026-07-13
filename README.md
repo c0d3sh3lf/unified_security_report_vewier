@@ -113,15 +113,39 @@ Use `tool: "semgrep"` and a Semgrep JSON report for Semgrep. The ingest endpoint
 | GET | `/api/dashboard/pipelines` | authenticated | Pipeline aggregates |
 | GET/POST | `/api/users` | administrator | List and create users |
 
+## Jenkins and Kubernetes NodePort deployment
+
+The deployment assets follow the numbered style used by the companion application:
+
+```text
+k8s/00-namespace.yaml  Kubernetes namespace
+k8s/01-config.yaml     Non-secret backend configuration
+k8s/02-mongo.yaml      Authenticated MongoDB, persistent storage, and service
+k8s/03-backend.yaml    API deployment and internal service
+k8s/04-frontend.yaml   UI deployment and NodePort service
+```
+
+The frontend is exposed at NodePort `30281`. It proxies `/api` internally to the backend Kubernetes service, so the production browser client can keep using the relative `/api` endpoint without an ingress. Configure your node-level reverse proxy or firewall to expose this port as appropriate.
+
+Configure these Jenkins credentials before running the rebuilt `Jenkinsfile`:
+
+| Credential ID | Type | Purpose |
+| --- | --- | --- |
+| `docker-hub-pat` | Username with password | Docker Hub publishing |
+| `security-reports-ingest-api-key` | Secret text | Upload Semgrep and Trivy reports to this application |
+| `security-reports-mongo-root-password` | Secret text | MongoDB root password |
+| `security-reports-jwt-secret` | Secret text | Backend JWT signing key, at least 32 characters |
+| `security-reports-default-admin-password` | Secret text | Initial platform administrator password |
+
+The pipeline tests the workspace, generates and archives Semgrep/Trivy JSON reports, uploads them to the reports API, builds and pushes immutable Docker tags plus `latest`, creates the Kubernetes secrets from Jenkins credentials, and waits for MongoDB, backend, and frontend rollouts.
+
 ## Deployment checklist
 
-- [ ] Build images from the supplied Dockerfiles and publish immutable, tagged images to Docker Hub.
-- [ ] Create a Kubernetes Secret from values equivalent to `k8s/config.example.yaml`; do not commit real production secrets.
-- [ ] Set a production MongoDB URI with authentication, encryption in transit, backup, and restricted network access.
-- [ ] Configure an HTTPS ingress in front of `reports-frontend`; set `CORS_ORIGIN` to its exact public origin.
-- [ ] Replace the default bootstrap administrator password and confirm the administrator can sign in.
-- [ ] Configure Jenkins credentials for Docker Hub, the Kubernetes kubeconfig, and a reports ingestion API key.
-- [ ] Set `IMAGE_PREFIX` in `Jenkinsfile` to the Docker Hub namespace and ensure the cluster can pull these images.
-- [ ] Apply `k8s/namespace.yaml`, create the configuration Secret/ConfigMap, then deploy rendered `k8s/app.yaml`.
-- [ ] Verify `/health`, protected API access, ingestion rejection after key expiry, and the dashboard through the ingress.
+- [ ] Create the Docker Hub repositories `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`, or update their names in `Jenkinsfile`.
+- [ ] Configure a Jenkins multibranch pipeline or SCM webhook for the `develop` branch of the GitHub repository.
+- [ ] Install Semgrep, Trivy, Docker, Node.js 22, `kubectl`, and `envsubst` on the Jenkins agent.
+- [ ] Add the five Jenkins credentials listed above and verify the reports API URL can be reached from Jenkins.
+- [ ] Ensure every Kubernetes node that can schedule MongoDB has `/mnt/data/security-reports-mongo` available with persistent storage; replace the hostPath volume with a managed storage class for multi-node production clusters.
+- [ ] Ensure NodePort `30281` is permitted through the cluster and network firewall, then verify the UI and `/api/health` through the selected node address.
+- [ ] Confirm the bootstrap administrator can sign in, an API key can ingest a Jenkins report, and expired/revoked keys are rejected.
 - [ ] Configure MongoDB backups, application log collection, image vulnerability scanning, and routine dependency updates.

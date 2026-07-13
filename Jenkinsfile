@@ -1,30 +1,192 @@
 pipeline {
   agent any
+
   environment {
-    REGISTRY = credentials('dockerhub-credentials')
-    IMAGE_PREFIX = 'your-dockerhub-namespace/unified-security-reports'
-    KUBECONFIG_CREDENTIALS = 'kubeconfig'
+    DOCKER_USER = 'invad3rsam'
+    BACKEND_IMAGE = 'invad3rsam/unified-security-reports-backend'
+    FRONTEND_IMAGE = 'invad3rsam/unified-security-reports-frontend'
+    IMAGE_TAG = "build-${env.BUILD_NUMBER}"
+    K8S_NAMESPACE = 'security-reports'
+    DOCKER_CREDS_ID = 'docker-hub-pat'
+    REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
   }
+
   stages {
-    stage('Checkout') { steps { checkout scm } }
-    stage('Verify') { steps { sh 'npm ci && npm run build && npm test' } }
-    stage('Build and push images') {
+    stage('Checkout Source') {
+      steps { checkout scm }
+    }
+
+    stage('Verify Application') {
       steps {
-        script {
-          def tag = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
-          sh "docker build -t ${IMAGE_PREFIX}-backend:${tag} backend"
-          sh "docker build -t ${IMAGE_PREFIX}-frontend:${tag} frontend"
-          sh "echo $REGISTRY_PSW | docker login -u $REGISTRY_USR --password-stdin"
-          sh "docker push ${IMAGE_PREFIX}-backend:${tag}"
-          sh "docker push ${IMAGE_PREFIX}-frontend:${tag}"
-          sh "sed -e 's|BACKEND_IMAGE|${IMAGE_PREFIX}-backend:${tag}|g' -e 's|FRONTEND_IMAGE|${IMAGE_PREFIX}-frontend:${tag}|g' k8s/app.yaml > k8s/rendered.yaml"
+        sh '''
+          set -eu
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+        '''
+      }
+    }
+
+    stage('Semgrep Code Review') {
+      steps {
+        sh '''
+          set -eu
+          mkdir -p semgrep-reports
+          semgrep scan --metrics=off --jobs 4 --timeout 300 \
+            --config p/default --config p/owasp-top-ten --config p/javascript --config p/typescript --config p/dockerfile --config p/secrets \
+            --exclude frontend/dist --exclude backend/dist --exclude node_modules --exclude semgrep-reports \
+            --json --output semgrep-reports/semgrep.json .
+        '''
+      }
+      post {
+        always { archiveArtifacts artifacts: 'semgrep-reports/**/*', allowEmptyArchive: false }
+      }
+    }
+
+    stage('Build Images') {
+      parallel {
+        stage('Build Backend Image') {
+          steps {
+            script {
+              docker.build("${env.BACKEND_IMAGE}:${env.IMAGE_TAG}", '-f backend/Dockerfile backend')
+              sh "docker tag ${env.BACKEND_IMAGE}:${env.IMAGE_TAG} ${env.BACKEND_IMAGE}:latest"
+            }
+          }
+        }
+        stage('Build Frontend Image') {
+          steps {
+            script {
+              docker.build("${env.FRONTEND_IMAGE}:${env.IMAGE_TAG}", '-f frontend/Dockerfile frontend')
+              sh "docker tag ${env.FRONTEND_IMAGE}:${env.IMAGE_TAG} ${env.FRONTEND_IMAGE}:latest"
+            }
+          }
         }
       }
     }
-    stage('Deploy') {
+
+    stage('Trivy Image Scan') {
       steps {
-        withCredentials([file(credentialsId: "$KUBECONFIG_CREDENTIALS", variable: 'KUBECONFIG')]) {
-          sh 'kubectl apply -f k8s/namespace.yaml && kubectl apply -f k8s/config.example.yaml && kubectl apply -f k8s/rendered.yaml'
+        script {
+          def images = [backend: env.BACKEND_IMAGE, frontend: env.FRONTEND_IMAGE]
+          sh 'mkdir -p trivy-reports'
+          parallel images.collectEntries { serviceName, imageName ->
+            [("Scan ${serviceName}"): {
+              sh """
+                set -eu
+                trivy image --no-progress --scanners vuln,misconfig,secret,license --image-config-scanners misconfig,secret \\
+                  --detection-priority comprehensive --include-non-failures --license-full --dependency-tree \\
+                  --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --format json --output trivy-reports/${serviceName}.json \\
+                  --exit-code 0 ${imageName}:${env.IMAGE_TAG}
+              """
+            }]
+          }
+        }
+      }
+      post {
+        always { archiveArtifacts artifacts: 'trivy-reports/**/*', allowEmptyArchive: false }
+      }
+    }
+
+    stage('Upload Security Reports') {
+      steps {
+        withCredentials([string(credentialsId: 'security-reports-ingest-api-key', variable: 'REPORTS_API_KEY')]) {
+          sh '''
+            set -eu
+            upload_report() {
+              tool="$1"
+              report="$2"
+              payload="$(mktemp)"
+              node - "$report" "$tool" > "$payload" <<'NODE'
+const fs = require('node:fs');
+const [reportPath, tool] = process.argv.slice(2);
+const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+process.stdout.write(JSON.stringify({
+  pipeline: process.env.JOB_NAME || 'unified-security-reports',
+  buildNumber: process.env.BUILD_NUMBER || '',
+  branch: process.env.BRANCH_NAME || process.env.GIT_BRANCH || '',
+  commit: process.env.GIT_COMMIT || '',
+  buildUrl: process.env.BUILD_URL || '',
+  tool,
+  report
+}));
+NODE
+              curl --fail-with-body --silent --show-error --request POST "$REPORTS_API_URL/ingest" \
+                --header 'Content-Type: application/json' \
+                --header "X-API-Key: $REPORTS_API_KEY" \
+                --data-binary "@$payload"
+              rm -f "$payload"
+            }
+            upload_report semgrep semgrep-reports/semgrep.json
+            upload_report trivy trivy-reports/backend.json
+            upload_report trivy trivy-reports/frontend.json
+          '''
+        }
+      }
+    }
+
+    stage('Push Images') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: "${env.DOCKER_CREDS_ID}", usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+          sh '''
+            set -eu
+            set +x
+            printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            docker push "$BACKEND_IMAGE:$IMAGE_TAG"
+            docker push "$BACKEND_IMAGE:latest"
+            docker push "$FRONTEND_IMAGE:$IMAGE_TAG"
+            docker push "$FRONTEND_IMAGE:latest"
+            docker logout || true
+          '''
+        }
+      }
+    }
+
+    stage('Cleanup Local Images') {
+      steps {
+        sh '''
+          docker rmi "$BACKEND_IMAGE:$IMAGE_TAG" "$BACKEND_IMAGE:latest" || true
+          docker rmi "$FRONTEND_IMAGE:$IMAGE_TAG" "$FRONTEND_IMAGE:latest" || true
+        '''
+      }
+    }
+
+    stage('Kubernetes Deployment') {
+      steps {
+        withCredentials([
+          string(credentialsId: 'security-reports-mongo-root-password', variable: 'MONGO_ROOT_PASSWORD'),
+          string(credentialsId: 'security-reports-jwt-secret', variable: 'JWT_SECRET'),
+          string(credentialsId: 'security-reports-default-admin-password', variable: 'DEFAULT_ADMIN_PASSWORD')
+        ]) {
+          sh '''
+            set -eu
+            set +x
+            umask 077
+            secret_dir="$(mktemp -d)"
+            trap 'rm -rf "$secret_dir"' EXIT
+            printf '%s' "$MONGO_ROOT_PASSWORD" > "$secret_dir/MONGO_ROOT_PASSWORD"
+            printf '%s' "$JWT_SECRET" > "$secret_dir/JWT_SECRET"
+            printf '%s' "$DEFAULT_ADMIN_PASSWORD" > "$secret_dir/DEFAULT_ADMIN_PASSWORD"
+            MONGO_URI="mongodb://securityreports:$(node -e 'process.stdout.write(encodeURIComponent(process.env.MONGO_ROOT_PASSWORD))')@mongo:27017/security_reports?authSource=admin"
+            printf '%s' "$MONGO_URI" > "$secret_dir/MONGO_URI"
+            kubectl apply -f k8s/00-namespace.yaml
+            kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-db-secrets \
+              --from-file=MONGO_ROOT_PASSWORD="$secret_dir/MONGO_ROOT_PASSWORD" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-secrets \
+              --from-file=MONGO_URI="$secret_dir/MONGO_URI" \
+              --from-file=JWT_SECRET="$secret_dir/JWT_SECRET" \
+              --from-file=DEFAULT_ADMIN_PASSWORD="$secret_dir/DEFAULT_ADMIN_PASSWORD" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            for file in k8s/01-config.yaml k8s/02-mongo.yaml k8s/03-backend.yaml k8s/04-frontend.yaml; do
+              envsubst < "$file" | kubectl apply -f - -n "$K8S_NAMESPACE"
+            done
+            kubectl -n "$K8S_NAMESPACE" set image deployment/backend backend="$BACKEND_IMAGE:$IMAGE_TAG"
+            kubectl -n "$K8S_NAMESPACE" set image deployment/frontend frontend="$FRONTEND_IMAGE:$IMAGE_TAG"
+            kubectl -n "$K8S_NAMESPACE" rollout status deployment/mongo --timeout=180s
+            kubectl -n "$K8S_NAMESPACE" rollout status deployment/backend --timeout=180s
+            kubectl -n "$K8S_NAMESPACE" rollout status deployment/frontend --timeout=180s
+          '''
         }
       }
     }
