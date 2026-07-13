@@ -4,13 +4,13 @@ The deployment pipeline reads deployment-specific application secrets from Hashi
 
 ## Secret engine and path
 
-Use the KV version 2 engine mounted at `secrets` and create exactly one production secret at this logical path:
+Use the KV version 2 engine mounted at `jenkins-secrets` and create exactly one production secret at this logical path:
 
 ```text
-secrets/jenkins-secrets/unified-security-reports/production
+jenkins-secrets/unified-security-reports/production
 ```
 
-The `Jenkinsfile` explicitly sets `engineVersion: 2`; do not include `/data/` in the Jenkins secret path. Vault's ACL policy does use `/data/`, because that is the KV v2 API path.
+The `Jenkinsfile` explicitly sets `engineVersion: 2`; do not include `/v1/` or `/data/` in the Jenkins secret path. The plugin constructs the Vault API request as `/v1/jenkins-secrets/data/unified-security-reports/production`. Vault's ACL policy does use `/data/`, because that is the KV v2 API path.
 
 ## Required secret values
 
@@ -25,7 +25,7 @@ Every value must be stored as a string. The key names are case-sensitive and mus
 Generate the high-entropy values outside command history. For example, use `openssl rand -base64 48` for `jwt_secret` and a password manager or `openssl rand -base64 36` for `mongo_root_password`. Set the values in secure shell variables, then write the one KV v2 secret:
 
 ```sh
-vault kv put secrets/jenkins-secrets/unified-security-reports/production \
+vault kv put jenkins-secrets/unified-security-reports/production \
   mongo_root_password="$MONGO_ROOT_PASSWORD" \
   jwt_secret="$JWT_SECRET" \
   default_admin_password="$DEFAULT_ADMIN_PASSWORD"
@@ -48,7 +48,7 @@ Keep these delivery credentials in Jenkins rather than Vault:
 Create a policy file named `jenkins-unified-security-reports.hcl` with only read access to the one KV v2 data path:
 
 ```hcl
-path "secrets/data/jenkins-secrets/unified-security-reports/production" {
+path "jenkins-secrets/data/unified-security-reports/production" {
   capabilities = ["read"]
 }
 ```
@@ -76,7 +76,7 @@ Before enabling deployment, verify the AppRole can read only the required secret
 
 ```sh
 vault read auth/approle/role/jenkins-unified-security-reports/role-id
-vault kv get secrets/jenkins-secrets/unified-security-reports/production
+vault kv get jenkins-secrets/unified-security-reports/production
 ```
 
 Run the Jenkins pipeline once and confirm that report upload, Docker Hub publication, and Kubernetes rollout succeed. Jenkins console output must not display any credential value; revoke and replace a value immediately if one is exposed.

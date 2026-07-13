@@ -19,7 +19,7 @@ pipeline {
     // REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
     VAULT_URL = 'https://vault.invadersam.cloud'
     VAULT_CREDENTIAL_ID = 'jenkins-vault-approle'
-    VAULT_SECRET_PATH = 'secrets/jenkins-secrets/unified-security-reports/production'
+    VAULT_SECRET_PATH = 'jenkins-secrets/unified-security-reports/production'
   }
 
   stages {
