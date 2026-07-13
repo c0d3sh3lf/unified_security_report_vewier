@@ -200,7 +200,9 @@ pipeline {
                 --from-file=DEFAULT_ADMIN_PASSWORD="$secret_dir/DEFAULT_ADMIN_PASSWORD" \
                 --dry-run=client -o yaml | kubectl apply -f -
               for file in k8s/01-config.yaml k8s/02-mongo.yaml k8s/03-backend.yaml k8s/04-frontend.yaml; do
-                envsubst < "$file" | kubectl apply -f - -n "$K8S_NAMESPACE"
+                # Render image references only. Runtime variables in manifests must
+                # remain intact so Kubernetes reads sensitive values from Secrets.
+                envsubst '${BACKEND_IMAGE} ${FRONTEND_IMAGE} ${IMAGE_TAG}' < "$file" | kubectl apply -f - -n "$K8S_NAMESPACE"
               done
               kubectl -n "$K8S_NAMESPACE" set image deployment/backend backend="$BACKEND_IMAGE:$IMAGE_TAG"
               kubectl -n "$K8S_NAMESPACE" set image deployment/frontend frontend="$FRONTEND_IMAGE:$IMAGE_TAG"

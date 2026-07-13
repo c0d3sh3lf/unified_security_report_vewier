@@ -33,6 +33,10 @@ metadata:
   namespace: security-reports
 spec:
   replicas: 1
+  # A single MongoDB instance cannot share its writable data directory with a
+  # replacement pod. Recreate prevents a rolling update from starting both.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: mongo
@@ -56,6 +60,13 @@ spec:
                 secretKeyRef:
                   name: security-reports-db-secrets
                   key: MONGO_ROOT_PASSWORD
+            # The probes authenticate with this runtime variable. Keep it separate
+            # from Mongo's initialization variable, which is consumed on first boot.
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: security-reports-db-secrets
+                  key: MONGO_ROOT_PASSWORD
             - name: MONGO_INITDB_DATABASE
               value: security_reports
           volumeMounts:
@@ -63,12 +74,12 @@ spec:
               mountPath: /data/db
           readinessProbe:
             exec:
-              command: ['sh', '-ec', 'mongosh --quiet --username securityreports --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(\"ping\").ok"']
+              command: ['sh', '-ec', 'mongosh --quiet --username securityreports --password "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(\"ping\").ok"']
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: ['sh', '-ec', 'mongosh --quiet --username securityreports --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(\"ping\").ok"']
+              command: ['sh', '-ec', 'mongosh --quiet --username securityreports --password "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(\"ping\").ok"']
             initialDelaySeconds: 30
             periodSeconds: 20
           resources:

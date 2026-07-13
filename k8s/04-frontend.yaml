@@ -31,6 +31,11 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ['ALL']
+          volumeMounts:
+            # nginx-unprivileged writes its runtime PID and temporary proxy files
+            # below /tmp. This scoped scratch volume preserves a read-only image.
+            - name: nginx-runtime
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /
@@ -50,6 +55,10 @@ spec:
             limits:
               cpu: 250m
               memory: 128Mi
+      volumes:
+        - name: nginx-runtime
+          emptyDir:
+            sizeLimit: 32Mi
 ---
 apiVersion: v1
 kind: Service
