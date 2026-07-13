@@ -77,11 +77,15 @@ spec:
               command: ['sh', '-ec', 'mongosh --quiet --username securityreports --password "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(\"ping\").ok"']
             initialDelaySeconds: 10
             periodSeconds: 10
+            # mongosh starts a Node.js process and can exceed Kubernetes' one-second
+            # default under load even after Mongo has already authenticated.
+            timeoutSeconds: 5
           livenessProbe:
             exec:
               command: ['sh', '-ec', 'mongosh --quiet --username securityreports --password "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --eval "db.adminCommand(\"ping\").ok"']
             initialDelaySeconds: 30
             periodSeconds: 20
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 100m
