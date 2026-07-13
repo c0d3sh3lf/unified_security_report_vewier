@@ -7,8 +7,10 @@ pipeline {
     FRONTEND_IMAGE = 'invad3rsam/unified-security-reports-frontend'
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     K8S_NAMESPACE = 'security-reports'
-    DOCKER_CREDS_ID = 'docker-hub-pat'
     REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
+    VAULT_URL = 'https://vault.invadersam.cloud'
+    VAULT_CREDENTIAL_ID = 'jenkins-vault-approle'
+    VAULT_SECRET_PATH = 'secrets/jenkins-secrets'
   }
 
   stages {
@@ -90,7 +92,15 @@ pipeline {
 
     stage('Upload Security Reports') {
       steps {
-        withCredentials([string(credentialsId: 'security-reports-ingest-api-key', variable: 'REPORTS_API_KEY')]) {
+        withVault([configuration: [
+          vaultUrl: env.VAULT_URL,
+          vaultCredentialId: env.VAULT_CREDENTIAL_ID,
+          engineVersion: 2
+        ], vaultSecrets: [[
+          path: env.VAULT_SECRET_PATH,
+          engineVersion: 2,
+          secretValues: [[envVar: 'REPORTS_API_KEY', vaultKey: 'reports_ingest_api_key']]
+        ]]]) {
           sh '''
             set -eu
             upload_report() {
@@ -127,7 +137,18 @@ NODE
 
     stage('Push Images') {
       steps {
-        withCredentials([usernamePassword(credentialsId: "${env.DOCKER_CREDS_ID}", usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+        withVault([configuration: [
+          vaultUrl: env.VAULT_URL,
+          vaultCredentialId: env.VAULT_CREDENTIAL_ID,
+          engineVersion: 2
+        ], vaultSecrets: [[
+          path: env.VAULT_SECRET_PATH,
+          engineVersion: 2,
+          secretValues: [
+            [envVar: 'DOCKERHUB_USERNAME', vaultKey: 'dockerhub_username'],
+            [envVar: 'DOCKERHUB_TOKEN', vaultKey: 'dockerhub_token']
+          ]
+        ]]]) {
           sh '''
             set -eu
             set +x
@@ -153,11 +174,19 @@ NODE
 
     stage('Kubernetes Deployment') {
       steps {
-        withCredentials([
-          string(credentialsId: 'security-reports-mongo-root-password', variable: 'MONGO_ROOT_PASSWORD'),
-          string(credentialsId: 'security-reports-jwt-secret', variable: 'JWT_SECRET'),
-          string(credentialsId: 'security-reports-default-admin-password', variable: 'DEFAULT_ADMIN_PASSWORD')
-        ]) {
+        withVault([configuration: [
+          vaultUrl: env.VAULT_URL,
+          vaultCredentialId: env.VAULT_CREDENTIAL_ID,
+          engineVersion: 2
+        ], vaultSecrets: [[
+          path: env.VAULT_SECRET_PATH,
+          engineVersion: 2,
+          secretValues: [
+            [envVar: 'MONGO_ROOT_PASSWORD', vaultKey: 'mongo_root_password'],
+            [envVar: 'JWT_SECRET', vaultKey: 'jwt_secret'],
+            [envVar: 'DEFAULT_ADMIN_PASSWORD', vaultKey: 'default_admin_password']
+          ]
+        ]]]) {
           sh '''
             set -eu
             set +x
