@@ -7,10 +7,11 @@ pipeline {
     FRONTEND_IMAGE = 'invad3rsam/unified-security-reports-frontend'
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     K8S_NAMESPACE = 'security-reports'
+    DOCKER_CREDS_ID = 'docker-hub-pat'
     REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
     VAULT_URL = 'https://vault.invadersam.cloud'
     VAULT_CREDENTIAL_ID = 'jenkins-vault-approle'
-    VAULT_SECRET_PATH = 'secrets/jenkins-secrets'
+    VAULT_SECRET_PATH = 'secrets/jenkins-secrets/unified-security-reports/production'
   }
 
   stages {
@@ -137,18 +138,7 @@ NODE
 
     stage('Push Images') {
       steps {
-        withVault([configuration: [
-          vaultUrl: env.VAULT_URL,
-          vaultCredentialId: env.VAULT_CREDENTIAL_ID,
-          engineVersion: 2
-        ], vaultSecrets: [[
-          path: env.VAULT_SECRET_PATH,
-          engineVersion: 2,
-          secretValues: [
-            [envVar: 'DOCKERHUB_USERNAME', vaultKey: 'dockerhub_username'],
-            [envVar: 'DOCKERHUB_TOKEN', vaultKey: 'dockerhub_token']
-          ]
-        ]]]) {
+        withCredentials([usernamePassword(credentialsId: "${env.DOCKER_CREDS_ID}", usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
           sh '''
             set -eu
             set +x

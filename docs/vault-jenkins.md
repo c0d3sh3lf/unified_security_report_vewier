@@ -1,13 +1,13 @@
-# HashiCorp Vault secrets for Jenkins
+# HashiCorp Vault application secrets for Jenkins
 
-The deployment pipeline reads all confidential application values from HashiCorp Vault through the Jenkins HashiCorp Vault plugin. It authenticates with the existing Jenkins credential ID `jenkins-vault-approle`, which must contain the AppRole Role ID and Secret ID.
+The deployment pipeline reads application secrets from HashiCorp Vault through the Jenkins HashiCorp Vault plugin. It authenticates with the existing Jenkins credential ID `jenkins-vault-approle`, which must contain the AppRole Role ID and Secret ID. Jenkins-owned delivery credentials, including Docker Hub, stay in the Jenkins credential store.
 
 ## Secret engine and path
 
-Use the KV version 2 engine mounted at `secrets` and create exactly one secret at this logical path:
+Use the KV version 2 engine mounted at `secrets` and create exactly one production secret at this logical path:
 
 ```text
-secrets/jenkins-secrets
+secrets/jenkins-secrets/unified-security-reports/production
 ```
 
 The `Jenkinsfile` explicitly sets `engineVersion: 2`; do not include `/data/` in the Jenkins secret path. Vault's ACL policy does use `/data/`, because that is the KV v2 API path.
@@ -18,8 +18,6 @@ Every value must be stored as a string. The key names are case-sensitive and mus
 
 | Vault key | Required value specification | Used by |
 |---|---|---|
-| `dockerhub_username` | Docker Hub account name with permission to push both configured application repositories. | Push Images |
-| `dockerhub_token` | Docker Hub personal access token with read and write repository access. Use a dedicated automation token and rotate it regularly. | Push Images |
 | `reports_ingest_api_key` | The plaintext application API key revealed when it is created in the Security Reports UI. Create it for the intended pipeline owner; do not store its displayed hash. Use a non-expiring key only when rotation is operationally managed. | Upload Security Reports |
 | `mongo_root_password` | A unique, randomly generated password of at least 32 characters for the `securityreports` MongoDB root user. It is URI-encoded by the pipeline before use. | Kubernetes Deployment |
 | `jwt_secret` | A cryptographically random JWT signing key of at least 48 bytes. Treat a change as a session invalidation event, because existing JWTs will no longer verify. | Kubernetes Deployment |
@@ -28,23 +26,30 @@ Every value must be stored as a string. The key names are case-sensitive and mus
 Generate the high-entropy values outside command history. For example, use `openssl rand -base64 48` for `jwt_secret` and a password manager or `openssl rand -base64 36` for `mongo_root_password`. Set the values in secure shell variables, then write the one KV v2 secret:
 
 ```sh
-vault kv put secrets/jenkins-secrets \
-  dockerhub_username="$DOCKERHUB_USERNAME" \
-  dockerhub_token="$DOCKERHUB_TOKEN" \
+vault kv put secrets/jenkins-secrets/unified-security-reports/production \
   reports_ingest_api_key="$REPORTS_INGEST_API_KEY" \
   mongo_root_password="$MONGO_ROOT_PASSWORD" \
   jwt_secret="$JWT_SECRET" \
   default_admin_password="$DEFAULT_ADMIN_PASSWORD"
 ```
 
-Updating this command replaces the values at the path, so include all six keys on every update. Do not put `MONGO_URI` in Vault: the pipeline derives it from `mongo_root_password` and URL-encodes the password before creating the Kubernetes secret.
+Updating this command replaces the values at the path, so include all four keys on every update. Do not put `MONGO_URI` in Vault: the pipeline derives it from `mongo_root_password` and URL-encodes the password before creating the Kubernetes secret.
+
+## Jenkins credential store
+
+Keep these delivery credentials in Jenkins rather than Vault:
+
+| Jenkins credential ID | Type | Specification |
+|---|---|---|
+| `jenkins-vault-approle` | HashiCorp Vault AppRole | Existing Role ID and Secret ID used only by the Vault plugin. It must have the policy below. |
+| `docker-hub-pat` | Username with password | Docker Hub account name and a dedicated read/write personal access token for `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`. |
 
 ## Least-privilege policy and AppRole
 
 Create a policy file named `jenkins-unified-security-reports.hcl` with only read access to the one KV v2 data path:
 
 ```hcl
-path "secrets/data/jenkins-secrets" {
+path "secrets/data/jenkins-secrets/unified-security-reports/production" {
   capabilities = ["read"]
 }
 ```
@@ -72,7 +77,7 @@ Before enabling deployment, verify the AppRole can read only the required secret
 
 ```sh
 vault read auth/approle/role/jenkins-unified-security-reports/role-id
-vault kv get secrets/jenkins-secrets
+vault kv get secrets/jenkins-secrets/unified-security-reports/production
 ```
 
-Run the Jenkins pipeline once and confirm that report upload, Docker Hub publication, and Kubernetes rollout succeed. Jenkins console output must not display any of the six secret values; revoke and replace a value immediately if one is exposed.
+Run the Jenkins pipeline once and confirm that report upload, Docker Hub publication, and Kubernetes rollout succeed. Jenkins console output must not display any credential value; revoke and replace a value immediately if one is exposed.
