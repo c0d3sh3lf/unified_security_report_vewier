@@ -135,13 +135,13 @@ Install the HashiCorp Vault plugin and configure the existing Jenkins Vault AppR
 | `docker-hub-pat` | Username with password | Publishes backend and frontend images to Docker Hub. |
 | `security-reports-ingest-api-key` | Secret text | Shared Security Reports ingestion API key for Jenkins pipelines. |
 
-The pipeline tests the workspace, generates and archives Semgrep/Trivy JSON reports, reads each secret from Vault only in the stage that needs it, uploads reports to the reports API, builds and pushes immutable Docker tags plus `latest`, creates Kubernetes secrets, and waits for MongoDB, backend, and frontend rollouts.
+The pipeline validates the workspace in an ephemeral Node container, generates and archives Semgrep/Trivy JSON reports, reads deployment secrets from Vault only in the stage that needs them, builds and pushes immutable Docker tags plus `latest`, creates Kubernetes secrets, and waits for MongoDB, backend, and frontend rollouts. Report upload is not enabled in the current pipeline.
 
 ## Deployment checklist
 
 - [ ] Create the Docker Hub repositories `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`, or update their names in `Jenkinsfile`.
 - [ ] Configure a Jenkins multibranch pipeline or SCM webhook for the `develop` branch of the GitHub repository.
-- [ ] Install Semgrep, Trivy, Docker, Node.js 22, `kubectl`, and `envsubst` on the Jenkins agent.
+- [ ] Install Semgrep, Trivy, Docker, `jq`, `kubectl`, and `envsubst` on the Jenkins agent. Node.js and npm execute inside the ephemeral `node:22-alpine` verification container.
 - [ ] Install and configure the Jenkins HashiCorp Vault plugin, add the `jenkins-vault-approle` AppRole credential, and create the KV v2 secret and policy described in [docs/vault-jenkins.md](docs/vault-jenkins.md).
 - [ ] Add the Vault TLS issuer certificate to the Jenkins controller trust store so it can verify `https://vault.invadersam.cloud`.
 - [ ] Ensure every Kubernetes node that can schedule MongoDB has `/mnt/data/security-reports-mongo` available with persistent storage; replace the hostPath volume with a managed storage class for multi-node production clusters.

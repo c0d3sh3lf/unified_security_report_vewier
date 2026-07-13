@@ -22,13 +22,18 @@ pipeline {
 
     stage('Verify Application') {
       steps {
-        sh '''
-          set -eu
-          npm ci
-          npm run lint
-          npm test
-          npm run build
-        '''
+        script {
+          // The Jenkins agent needs Docker only; Node and npm run in this ephemeral container.
+          docker.image('node:22-alpine').inside {
+            sh '''
+              set -eu
+              npm ci
+              npm run lint
+              npm test
+              npm run build
+            '''
+          }
+        }
       }
     }
 
@@ -92,43 +97,6 @@ pipeline {
       }
     }
 
-//     stage('Upload Security Reports') {
-//       steps {
-//         withCredentials([string(credentialsId: "${env.REPORTS_API_KEY_CREDENTIAL_ID}", variable: 'REPORTS_API_KEY')]) {
-//           sh '''
-//             set -eu
-//             upload_report() {
-//               tool="$1"
-//               report="$2"
-//               payload="$(mktemp)"
-//               node - "$report" "$tool" > "$payload" <<'NODE'
-// const fs = require('node:fs');
-// const [reportPath, tool] = process.argv.slice(2);
-// const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-// process.stdout.write(JSON.stringify({
-//   pipeline: process.env.JOB_NAME || 'unified-security-reports',
-//   buildNumber: process.env.BUILD_NUMBER || '',
-//   branch: process.env.BRANCH_NAME || process.env.GIT_BRANCH || '',
-//   commit: process.env.GIT_COMMIT || '',
-//   buildUrl: process.env.BUILD_URL || '',
-//   tool,
-//   report
-// }));
-// NODE
-//               curl --fail-with-body --silent --show-error --request POST "$REPORTS_API_URL/ingest" \
-//                 --header 'Content-Type: application/json' \
-//                 --header "X-API-Key: $REPORTS_API_KEY" \
-//                 --data-binary "@$payload"
-//               rm -f "$payload"
-//             }
-//             upload_report semgrep semgrep-reports/semgrep.json
-//             upload_report trivy trivy-reports/backend.json
-//             upload_report trivy trivy-reports/frontend.json
-//           '''
-//         }
-//       }
-//     }
-
     stage('Push Images') {
       steps {
         withCredentials([usernamePassword(credentialsId: "${env.DOCKER_CREDS_ID}", usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
@@ -179,7 +147,8 @@ pipeline {
             printf '%s' "$MONGO_ROOT_PASSWORD" > "$secret_dir/MONGO_ROOT_PASSWORD"
             printf '%s' "$JWT_SECRET" > "$secret_dir/JWT_SECRET"
             printf '%s' "$DEFAULT_ADMIN_PASSWORD" > "$secret_dir/DEFAULT_ADMIN_PASSWORD"
-            MONGO_URI="mongodb://securityreports:$(node -e 'process.stdout.write(encodeURIComponent(process.env.MONGO_ROOT_PASSWORD))')@mongo:27017/security_reports?authSource=admin"
+            encoded_mongo_password="$(printf '%s' "$MONGO_ROOT_PASSWORD" | jq -sRr '@uri')"
+            MONGO_URI="mongodb://securityreports:$encoded_mongo_password@mongo:27017/security_reports?authSource=admin"
             printf '%s' "$MONGO_URI" > "$secret_dir/MONGO_URI"
             kubectl apply -f k8s/00-namespace.yaml
             kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-db-secrets \
