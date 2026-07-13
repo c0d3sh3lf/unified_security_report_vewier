@@ -9,12 +9,16 @@ const semgrepSeverity = (value: unknown) => ({ info: 'low', warning: 'medium', e
 
 export const detectTool = (payload: unknown): 'trivy' | 'semgrep' => {
   const root = record(payload);
-  if (Array.isArray(root.Results) || 'SchemaVersion' in root || 'ArtifactName' in root) return 'trivy';
-  if (Array.isArray(root.results) || typeof root.version === 'string') return 'semgrep';
+  const isTrivy = Array.isArray(root.Results) && (typeof root.SchemaVersion === 'number' || typeof root.ArtifactName === 'string' || Object.keys(record(root.Trivy)).length > 0);
+  const isSemgrep = Array.isArray(root.results) && typeof root.version === 'string';
+  if (isTrivy) return 'trivy';
+  if (isSemgrep) return 'semgrep';
   throw new AppError(400, 'Unsupported report format. Upload a Trivy JSON or Semgrep JSON report.');
 };
 export const parseReport = (payload: unknown, requestedTool?: 'trivy' | 'semgrep'): ParsedReport => {
-  const tool = requestedTool ?? detectTool(payload);
+  const detectedTool = detectTool(payload);
+  if (requestedTool && requestedTool !== detectedTool) throw new AppError(400, `Selected scanner "${requestedTool}" does not match the uploaded ${detectedTool} report.`);
+  const tool = requestedTool ?? detectedTool;
   const root = record(payload);
   if (tool === 'trivy') {
     const results = Array.isArray(root.Results) ? root.Results : [];

@@ -13,4 +13,11 @@ describe('report parser', () => {
     ] });
     expect(parsed.tool).toBe('semgrep'); expect(parsed.findings.map((finding) => finding.severity)).toEqual(['low', 'medium', 'high']); expect(parsed.findings[1].location).toBe('src/warning.ts:2');
   });
+  it('rejects a report when the selected scanner type does not match its structure', () => {
+    const semgrepReport = { version: '1.0', results: [] };
+    expect(() => parseReport(semgrepReport, 'trivy')).toThrow('Selected scanner "trivy" does not match the uploaded semgrep report.');
+  });
+  it('rejects arbitrary JSON that is not a supported scan report', () => {
+    expect(() => parseReport({ source: 'untrusted', findings: [] })).toThrow('Unsupported report format');
+  });
 });
