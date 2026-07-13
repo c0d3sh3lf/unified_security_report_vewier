@@ -8,9 +8,9 @@ pipeline {
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     K8S_NAMESPACE = 'security-reports'
     DOCKER_CREDS_ID = 'docker-hub-pat'
-    REPORTS_API_KEY_CREDENTIAL_ID = 'security-reports-ingest-api-key'
-    REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
-    VAULT_URL = 'https://vault.invadersam.cloud'
+    // REPORTS_API_KEY_CREDENTIAL_ID = 'security-reports-ingest-api-key'
+    // REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
+    VAULT_URL = 'https://192.168.0.250:31200'
     VAULT_CREDENTIAL_ID = 'jenkins-vault-approle'
     VAULT_SECRET_PATH = 'secrets/jenkins-secrets/unified-security-reports/production'
   }
@@ -92,42 +92,42 @@ pipeline {
       }
     }
 
-    stage('Upload Security Reports') {
-      steps {
-        withCredentials([string(credentialsId: "${env.REPORTS_API_KEY_CREDENTIAL_ID}", variable: 'REPORTS_API_KEY')]) {
-          sh '''
-            set -eu
-            upload_report() {
-              tool="$1"
-              report="$2"
-              payload="$(mktemp)"
-              node - "$report" "$tool" > "$payload" <<'NODE'
-const fs = require('node:fs');
-const [reportPath, tool] = process.argv.slice(2);
-const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-process.stdout.write(JSON.stringify({
-  pipeline: process.env.JOB_NAME || 'unified-security-reports',
-  buildNumber: process.env.BUILD_NUMBER || '',
-  branch: process.env.BRANCH_NAME || process.env.GIT_BRANCH || '',
-  commit: process.env.GIT_COMMIT || '',
-  buildUrl: process.env.BUILD_URL || '',
-  tool,
-  report
-}));
-NODE
-              curl --fail-with-body --silent --show-error --request POST "$REPORTS_API_URL/ingest" \
-                --header 'Content-Type: application/json' \
-                --header "X-API-Key: $REPORTS_API_KEY" \
-                --data-binary "@$payload"
-              rm -f "$payload"
-            }
-            upload_report semgrep semgrep-reports/semgrep.json
-            upload_report trivy trivy-reports/backend.json
-            upload_report trivy trivy-reports/frontend.json
-          '''
-        }
-      }
-    }
+//     stage('Upload Security Reports') {
+//       steps {
+//         withCredentials([string(credentialsId: "${env.REPORTS_API_KEY_CREDENTIAL_ID}", variable: 'REPORTS_API_KEY')]) {
+//           sh '''
+//             set -eu
+//             upload_report() {
+//               tool="$1"
+//               report="$2"
+//               payload="$(mktemp)"
+//               node - "$report" "$tool" > "$payload" <<'NODE'
+// const fs = require('node:fs');
+// const [reportPath, tool] = process.argv.slice(2);
+// const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+// process.stdout.write(JSON.stringify({
+//   pipeline: process.env.JOB_NAME || 'unified-security-reports',
+//   buildNumber: process.env.BUILD_NUMBER || '',
+//   branch: process.env.BRANCH_NAME || process.env.GIT_BRANCH || '',
+//   commit: process.env.GIT_COMMIT || '',
+//   buildUrl: process.env.BUILD_URL || '',
+//   tool,
+//   report
+// }));
+// NODE
+//               curl --fail-with-body --silent --show-error --request POST "$REPORTS_API_URL/ingest" \
+//                 --header 'Content-Type: application/json' \
+//                 --header "X-API-Key: $REPORTS_API_KEY" \
+//                 --data-binary "@$payload"
+//               rm -f "$payload"
+//             }
+//             upload_report semgrep semgrep-reports/semgrep.json
+//             upload_report trivy trivy-reports/backend.json
+//             upload_report trivy trivy-reports/frontend.json
+//           '''
+//         }
+//       }
+//     }
 
     stage('Push Images') {
       steps {
