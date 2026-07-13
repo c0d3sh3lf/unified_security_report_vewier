@@ -5,6 +5,7 @@ pipeline {
     DOCKER_USER = 'invad3rsam'
     BACKEND_IMAGE = 'invad3rsam/unified-security-reports-backend'
     FRONTEND_IMAGE = 'invad3rsam/unified-security-reports-frontend'
+    VERIFY_IMAGE = 'node:22-alpine'
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     K8S_NAMESPACE = 'security-reports'
     DOCKER_CREDS_ID = 'docker-hub-pat'
@@ -24,7 +25,10 @@ pipeline {
       steps {
         script {
           // The Jenkins agent needs Docker only; Node and npm run in this ephemeral container.
-          docker.image('node:22-alpine').inside {
+          retry(3) {
+            docker.image(env.VERIFY_IMAGE).pull()
+          }
+          docker.image(env.VERIFY_IMAGE).inside {
             sh '''
               set -eu
               npm ci
@@ -58,7 +62,9 @@ pipeline {
         stage('Build Backend Image') {
           steps {
             script {
-              docker.build("${env.BACKEND_IMAGE}:${env.IMAGE_TAG}", '-f backend/Dockerfile backend')
+              retry(3) {
+                docker.build("${env.BACKEND_IMAGE}:${env.IMAGE_TAG}", '-f backend/Dockerfile backend')
+              }
               sh "docker tag ${env.BACKEND_IMAGE}:${env.IMAGE_TAG} ${env.BACKEND_IMAGE}:latest"
             }
           }
@@ -66,7 +72,9 @@ pipeline {
         stage('Build Frontend Image') {
           steps {
             script {
-              docker.build("${env.FRONTEND_IMAGE}:${env.IMAGE_TAG}", '-f frontend/Dockerfile frontend')
+              retry(3) {
+                docker.build("${env.FRONTEND_IMAGE}:${env.IMAGE_TAG}", '-f frontend/Dockerfile frontend')
+              }
               sh "docker tag ${env.FRONTEND_IMAGE}:${env.IMAGE_TAG} ${env.FRONTEND_IMAGE}:latest"
             }
           }
