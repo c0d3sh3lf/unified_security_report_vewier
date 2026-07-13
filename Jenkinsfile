@@ -17,7 +17,7 @@ pipeline {
     DOCKER_CREDS_ID = 'docker-hub-pat'
     // REPORTS_API_KEY_CREDENTIAL_ID = 'security-reports-ingest-api-key'
     // REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
-    VAULT_URL = 'https://192.168.0.250:31200'
+    VAULT_URL = 'https://vault.invadersam.cloud'
     VAULT_CREDENTIAL_ID = 'jenkins-vault-approle'
     VAULT_SECRET_PATH = 'secrets/jenkins-secrets/unified-security-reports/production'
   }
