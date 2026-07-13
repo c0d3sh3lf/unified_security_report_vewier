@@ -11,6 +11,7 @@ pipeline {
     BACKEND_IMAGE = 'invad3rsam/unified-security-reports-backend'
     FRONTEND_IMAGE = 'invad3rsam/unified-security-reports-frontend'
     VERIFY_IMAGE = 'node:22-alpine'
+    SEMGREP_BIN = '/var/lib/jenkins/.local/bin/semgrep'
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     K8S_NAMESPACE = 'security-reports'
     DOCKER_CREDS_ID = 'docker-hub-pat'
@@ -60,8 +61,17 @@ pipeline {
       steps {
         sh '''
           set -eu
+          semgrep_bin="$SEMGREP_BIN"
+          if [ ! -x "$semgrep_bin" ]; then
+            semgrep_bin="$(command -v semgrep || true)"
+          fi
+          if [ -z "$semgrep_bin" ] || [ ! -x "$semgrep_bin" ]; then
+            echo "Semgrep was not found. Install it for the Jenkins service user or set SEMGREP_BIN to its executable path." >&2
+            exit 127
+          fi
+          "$semgrep_bin" --version
           mkdir -p semgrep-reports
-          semgrep scan --metrics=off --jobs 4 --timeout 300 \
+          "$semgrep_bin" scan --metrics=off --jobs 4 --timeout 300 \
             --config p/default --config p/owasp-top-ten --config p/javascript --config p/typescript --config p/dockerfile --config p/secrets \
             --exclude frontend/dist --exclude backend/dist --exclude node_modules --exclude semgrep-reports \
             --json --output semgrep-reports/semgrep.json .
