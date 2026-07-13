@@ -248,7 +248,7 @@ pipeline {
               export MONGO_IMAGE="$resolved_mongo_image"
               resolved_mongo_digest="${MONGO_IMAGE##*@}"
               current_mongo_image_id="$(kubectl -n "$K8S_NAMESPACE" get pods -l app=mongo -o json 2>/dev/null | jq -r '[.items[] | select(.status.phase == "Running") | .status.containerStatuses[]? | select(.name == "mongo") | .imageID][0] // empty')"
-              current_mongo_digest="$(printf '%s' "$current_mongo_image_id" | sed -n 's|.*@\(sha256:.*\)$|\1|p')"
+              current_mongo_digest="${current_mongo_image_id##*@}"
 
               kubectl -n "$K8S_NAMESPACE" create secret docker-registry dockerhub-registry \
                 --docker-server=https://index.docker.io/v1/ \
