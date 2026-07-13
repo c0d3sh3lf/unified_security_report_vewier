@@ -8,3 +8,27 @@ nav button, .account button { display: flex; }
 .scan-row { grid-template-columns: 76px 1fr 32px 18px; }
 .live .material-symbols-outlined { font-size: 15px; }
 @media (max-width: 900px) { nav button span, .account button span { font-size: 0; } .account button { justify-content: center; } }
+.inventory-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 16px; }
+.search-field { min-width: min(100%, 570px); display: flex; align-items: center; gap: 9px; padding: 0 10px 0 13px; border: 1px solid rgba(196,219,255,.2); border-radius: 11px; background: rgba(1, 10, 21, .35); color: #8dcbff; }
+.search-field:focus-within { border-color: #70d7cc; box-shadow: 0 0 0 3px rgba(112,215,204,.12); }
+.search-field input { border: 0; box-shadow: none; background: transparent; padding-left: 0; }
+.search-field input:focus { box-shadow: none; }
+.clear-search { border: 0; background: transparent; color: #8dcbff; font-weight: 700; font-size: 12px; }
+.clear-search:disabled { display: none; }
+.result-count { color: #93a8c4; font-size: 12px; white-space: nowrap; }
+.detail-page { display: grid; gap: 22px; }
+.back-button { width: max-content; }
+.detail-hero { border-radius: 19px; padding: clamp(22px, 4vw, 36px); display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+.detail-hero h2 { margin: 6px 0 8px; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.metadata-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; margin: 0; }
+.metadata-list dt { color: #91a8c4; display: flex; align-items: center; gap: 7px; font-size: 11px; text-transform: uppercase; letter-spacing: .7px; }
+.metadata-list dt .material-symbols-outlined { font-size: 15px; color: #75ccff; }
+.metadata-list dd { margin: 6px 0 0; color: #edf5ff; overflow-wrap: anywhere; font-size: 13px; }
+.scope-copy { color: #aec0d7; line-height: 1.65; font-size: 13px; }
+.severity-breakdown { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 19px; font: 500 11px 'DM Mono', monospace; }
+.section-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 7px; }
+.section-heading h3 { margin-top: 5px; }
+.section-heading > span { color: #92a7c0; font: 500 11px 'DM Mono', monospace; }
+.loading { color: #a8bdd5; padding: 34px 0; }
+@media (max-width: 700px) { .inventory-toolbar, .detail-hero { align-items: stretch; flex-direction: column; } .search-field { min-width: 0; width: 100%; } .detail-grid { grid-template-columns: 1fr; } .metadata-list { grid-template-columns: 1fr; } }
