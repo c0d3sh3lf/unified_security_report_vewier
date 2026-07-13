@@ -7,3 +7,5 @@ coverage/
 *.log
 .DS_Store
 sample_outputs/
+App Creation Prompt.md
+Codex_App_Creation_Prompt_Template.md

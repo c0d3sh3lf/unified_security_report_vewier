@@ -76,10 +76,10 @@ The parser unit test validates normalisation of representative Trivy and Semgrep
 
 ## Jenkins ingestion
 
-Create an API key from **API keys** in the UI. Store the revealed value in Jenkins Credentials as a secret text credential called `security-reports-api-key`. A pipeline can submit a report as follows:
+Create an API key from **API keys** in the UI. Store the revealed value as the shared Jenkins secret-text credential `security-reports-ingest-api-key`; the included `Jenkinsfile` pushes the Semgrep report and both Trivy image reports to `https://sentinel.invadersam.cloud/api/ingest` after scanning. A pipeline can submit an additional report as follows:
 
 ```groovy
-withCredentials([string(credentialsId: 'security-reports-api-key', variable: 'REPORTS_API_KEY')]) {
+withCredentials([string(credentialsId: 'security-reports-ingest-api-key', variable: 'REPORTS_API_KEY')]) {
   sh '''
     jq -n --slurpfile report trivy.json '{
       pipeline: env.JOB_NAME,
@@ -113,15 +113,41 @@ Use `tool: "semgrep"` and a Semgrep JSON report for Semgrep. The ingest endpoint
 | GET | `/api/dashboard/pipelines` | authenticated | Pipeline aggregates |
 | GET/POST | `/api/users` | administrator | List and create users |
 
+## Jenkins and Kubernetes NodePort deployment
+
+The deployment assets follow the numbered style used by the companion application:
+
+```text
+k8s/00-namespace.yaml  Kubernetes namespace
+k8s/01-config.yaml     Non-secret backend configuration
+k8s/02-mongo.yaml      Authenticated MongoDB, persistent storage, and service
+k8s/03-backend.yaml    API deployment and internal service
+k8s/04-frontend.yaml   UI deployment and NodePort service
+```
+
+The frontend is exposed at NodePort `30281`. It proxies `/api` internally to the backend Kubernetes service, so the production browser client can keep using the relative `/api` endpoint without an ingress. The production UI is available at `https://sentinel.invadersam.cloud`; configure your node-level reverse proxy or firewall to expose this port as appropriate.
+
+Install the HashiCorp Vault plugin and configure the existing Jenkins Vault AppRole credential with ID `jenkins-vault-approle`. The pipeline uses it to read deployment-specific application secrets from `https://vault.invadersam.cloud`. Docker Hub and the shared scan-ingestion key remain Jenkins-owned credentials, while MongoDB, JWT signing, and bootstrap administration are application secrets in Vault. The complete KV v2 secret specification, least-privilege policy, and AppRole settings are in [docs/vault-jenkins.md](docs/vault-jenkins.md).
+
+| Jenkins credential ID | Type | Purpose |
+| --- | --- | --- |
+| `jenkins-vault-approle` | HashiCorp Vault AppRole | Authenticates the Vault plugin to read application secrets. |
+| `docker-hub-pat` | Username with password | Publishes backend and frontend images to Docker Hub. |
+| `security-reports-ingest-api-key` | Secret text | Shared Security Reports ingestion API key for Jenkins pipelines. |
+
+The pipeline validates the workspace in an ephemeral Node container, generates and archives Semgrep/Trivy JSON reports, reads deployment secrets from Vault only in the stage that needs them, builds and pushes immutable Docker tags plus `latest`, creates Kubernetes secrets, and waits for MongoDB, backend, and frontend rollouts. Report upload is not enabled in the current pipeline.
+
+During deployment, the pipeline creates or updates the `dockerhub-registry` image-pull secret from the Jenkins `docker-hub-pat` credential. Both application deployments reference that secret, allowing Kubernetes to pull private Docker Hub images.
+
 ## Deployment checklist
 
-- [ ] Build images from the supplied Dockerfiles and publish immutable, tagged images to Docker Hub.
-- [ ] Create a Kubernetes Secret from values equivalent to `k8s/config.example.yaml`; do not commit real production secrets.
-- [ ] Set a production MongoDB URI with authentication, encryption in transit, backup, and restricted network access.
-- [ ] Configure an HTTPS ingress in front of `reports-frontend`; set `CORS_ORIGIN` to its exact public origin.
-- [ ] Replace the default bootstrap administrator password and confirm the administrator can sign in.
-- [ ] Configure Jenkins credentials for Docker Hub, the Kubernetes kubeconfig, and a reports ingestion API key.
-- [ ] Set `IMAGE_PREFIX` in `Jenkinsfile` to the Docker Hub namespace and ensure the cluster can pull these images.
-- [ ] Apply `k8s/namespace.yaml`, create the configuration Secret/ConfigMap, then deploy rendered `k8s/app.yaml`.
-- [ ] Verify `/health`, protected API access, ingestion rejection after key expiry, and the dashboard through the ingress.
+- [ ] Create the Docker Hub repositories `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`, or update their names in `Jenkinsfile`.
+- [ ] Configure a Jenkins multibranch pipeline or SCM webhook for the `develop` branch of the GitHub repository.
+- [ ] Install Semgrep, Trivy, Docker, `jq`, `kubectl`, and `envsubst` for the Jenkins service user. The pipeline resolves Semgrep from `/var/lib/jenkins/.local/bin/semgrep`; update `SEMGREP_BIN` in `Jenkinsfile` if it is installed elsewhere. Node.js and npm execute inside an ephemeral `node:22-alpine` verification container, using an isolated `@verify` workspace and `/tmp` npm cache.
+- [ ] Ensure the Jenkins Docker daemon can reach Docker Hub, or configure a registry mirror. The verification-image pull and application-image builds retry transient registry failures three times.
+- [ ] Install and configure the Jenkins HashiCorp Vault plugin, add the `jenkins-vault-approle` AppRole credential, and create the KV v2 secret and policy described in [docs/vault-jenkins.md](docs/vault-jenkins.md).
+- [ ] Add the Vault TLS issuer certificate to the Jenkins controller trust store so it can verify `https://vault.invadersam.cloud`.
+- [ ] Ensure every Kubernetes node that can schedule MongoDB has `/mnt/data/security-reports-mongo` available with persistent storage; replace the hostPath volume with a managed storage class for multi-node production clusters.
+- [ ] Ensure NodePort `30281` is permitted through the cluster and network firewall, then verify the UI and API access through the selected node address.
+- [ ] Confirm the bootstrap administrator can sign in at `https://sentinel.invadersam.cloud`, the Jenkins report-push stage uploads Semgrep and Trivy reports, and expired/revoked keys are rejected.
 - [ ] Configure MongoDB backups, application log collection, image vulnerability scanning, and routine dependency updates.
