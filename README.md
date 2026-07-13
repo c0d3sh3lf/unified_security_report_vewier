@@ -141,7 +141,7 @@ The pipeline validates the workspace in an ephemeral Node container, generates a
 
 - [ ] Create the Docker Hub repositories `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`, or update their names in `Jenkinsfile`.
 - [ ] Configure a Jenkins multibranch pipeline or SCM webhook for the `develop` branch of the GitHub repository.
-- [ ] Install Semgrep, Trivy, Docker, `jq`, `kubectl`, and `envsubst` on the Jenkins agent. Node.js and npm execute inside the ephemeral `node:22-alpine` verification container.
+- [ ] Install Semgrep, Trivy, Docker, `jq`, `kubectl`, and `envsubst` on the Jenkins agent. Node.js and npm execute inside an ephemeral `node:22-alpine` verification container, using an isolated `@verify` workspace and `/tmp` npm cache.
 - [ ] Ensure the Jenkins Docker daemon can reach Docker Hub, or configure a registry mirror. The verification-image pull and application-image builds retry transient registry failures three times.
 - [ ] Install and configure the Jenkins HashiCorp Vault plugin, add the `jenkins-vault-approle` AppRole credential, and create the KV v2 secret and policy described in [docs/vault-jenkins.md](docs/vault-jenkins.md).
 - [ ] Add the Vault TLS issuer certificate to the Jenkins controller trust store so it can verify `https://vault.invadersam.cloud`.

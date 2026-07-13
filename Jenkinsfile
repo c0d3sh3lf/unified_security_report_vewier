@@ -1,6 +1,11 @@
 pipeline {
   agent any
 
+  options {
+    // A shared workspace must not be modified by two npm installations at once.
+    disableConcurrentBuilds()
+  }
+
   environment {
     DOCKER_USER = 'invad3rsam'
     BACKEND_IMAGE = 'invad3rsam/unified-security-reports-backend'
@@ -24,18 +29,28 @@ pipeline {
     stage('Verify Application') {
       steps {
         script {
-          // The Jenkins agent needs Docker only; Node and npm run in this ephemeral container.
-          retry(3) {
-            docker.image(env.VERIFY_IMAGE).pull()
-          }
-          docker.image(env.VERIFY_IMAGE).inside {
-            sh '''
-              set -eu
-              npm ci
-              npm run lint
-              npm test
-              npm run build
-            '''
+          // Keep npm's generated files out of the deployment workspace.
+          ws("${env.WORKSPACE}@verify") {
+            try {
+              deleteDir()
+              checkout scm
+              retry(3) {
+                docker.image(env.VERIFY_IMAGE).pull()
+              }
+              docker.image(env.VERIFY_IMAGE).inside {
+                sh '''
+                  set -eu
+                  export NPM_CONFIG_CACHE=/tmp/npm-cache
+                  mkdir -p "$NPM_CONFIG_CACHE"
+                  npm ci --cache "$NPM_CONFIG_CACHE"
+                  npm run lint
+                  npm test
+                  npm run build
+                '''
+              }
+            } finally {
+              deleteDir()
+            }
           }
         }
       }
