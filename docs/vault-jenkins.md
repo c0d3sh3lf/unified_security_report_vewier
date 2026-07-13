@@ -1,6 +1,6 @@
 # HashiCorp Vault application secrets for Jenkins
 
-The deployment pipeline reads application secrets from HashiCorp Vault through the Jenkins HashiCorp Vault plugin. It authenticates with the existing Jenkins credential ID `jenkins-vault-approle`, which must contain the AppRole Role ID and Secret ID. Jenkins-owned delivery credentials, including Docker Hub, stay in the Jenkins credential store.
+The deployment pipeline reads deployment-specific application secrets from HashiCorp Vault through the Jenkins HashiCorp Vault plugin. It authenticates with the existing Jenkins credential ID `jenkins-vault-approle`, which must contain the AppRole Role ID and Secret ID. Jenkins-owned delivery credentials, including Docker Hub and the shared report-ingestion key, stay in the Jenkins credential store.
 
 ## Secret engine and path
 
@@ -18,7 +18,6 @@ Every value must be stored as a string. The key names are case-sensitive and mus
 
 | Vault key | Required value specification | Used by |
 |---|---|---|
-| `reports_ingest_api_key` | The plaintext application API key revealed when it is created in the Security Reports UI. Create it for the intended pipeline owner; do not store its displayed hash. Use a non-expiring key only when rotation is operationally managed. | Upload Security Reports |
 | `mongo_root_password` | A unique, randomly generated password of at least 32 characters for the `securityreports` MongoDB root user. It is URI-encoded by the pipeline before use. | Kubernetes Deployment |
 | `jwt_secret` | A cryptographically random JWT signing key of at least 48 bytes. Treat a change as a session invalidation event, because existing JWTs will no longer verify. | Kubernetes Deployment |
 | `default_admin_password` | Initial administrator password that satisfies the backend password policy: at least 12 characters with uppercase, lowercase, and numeric characters. Changing it after first bootstrap does not change an existing administrator account. | Kubernetes Deployment |
@@ -27,13 +26,12 @@ Generate the high-entropy values outside command history. For example, use `open
 
 ```sh
 vault kv put secrets/jenkins-secrets/unified-security-reports/production \
-  reports_ingest_api_key="$REPORTS_INGEST_API_KEY" \
   mongo_root_password="$MONGO_ROOT_PASSWORD" \
   jwt_secret="$JWT_SECRET" \
   default_admin_password="$DEFAULT_ADMIN_PASSWORD"
 ```
 
-Updating this command replaces the values at the path, so include all four keys on every update. Do not put `MONGO_URI` in Vault: the pipeline derives it from `mongo_root_password` and URL-encodes the password before creating the Kubernetes secret.
+Updating this command replaces the values at the path, so include all three keys on every update. Do not put `MONGO_URI` in Vault: the pipeline derives it from `mongo_root_password` and URL-encodes the password before creating the Kubernetes secret.
 
 ## Jenkins credential store
 
@@ -43,6 +41,7 @@ Keep these delivery credentials in Jenkins rather than Vault:
 |---|---|---|
 | `jenkins-vault-approle` | HashiCorp Vault AppRole | Existing Role ID and Secret ID used only by the Vault plugin. It must have the policy below. |
 | `docker-hub-pat` | Username with password | Docker Hub account name and a dedicated read/write personal access token for `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`. |
+| `security-reports-ingest-api-key` | Secret text | Shared plaintext application API key used to upload Semgrep and Trivy reports from Jenkins. Create it in the Security Reports UI, store its one-time revealed value here, and rotate it across all Jenkins pipelines together. |
 
 ## Least-privilege policy and AppRole
 

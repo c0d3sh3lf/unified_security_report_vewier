@@ -76,18 +76,10 @@ The parser unit test validates normalisation of representative Trivy and Semgrep
 
 ## Jenkins ingestion
 
-Create an API key from **API keys** in the UI. Store the revealed value in HashiCorp Vault; the included `Jenkinsfile` reads it with the Jenkins HashiCorp Vault plugin. A pipeline can submit a report as follows:
+Create an API key from **API keys** in the UI. Store the revealed value as the shared Jenkins secret-text credential `security-reports-ingest-api-key`; the included `Jenkinsfile` uses it for report upload. A pipeline can submit a report as follows:
 
 ```groovy
-withVault([configuration: [
-  vaultUrl: 'https://vault.invadersam.cloud',
-  vaultCredentialId: 'jenkins-vault-approle',
-  engineVersion: 2
-], vaultSecrets: [[
-  path: 'secrets/jenkins-secrets/unified-security-reports/production',
-  engineVersion: 2,
-  secretValues: [[envVar: 'REPORTS_API_KEY', vaultKey: 'reports_ingest_api_key']]
-]]]) {
+withCredentials([string(credentialsId: 'security-reports-ingest-api-key', variable: 'REPORTS_API_KEY')]) {
   sh '''
     jq -n --slurpfile report trivy.json '{
       pipeline: env.JOB_NAME,
@@ -135,12 +127,13 @@ k8s/04-frontend.yaml   UI deployment and NodePort service
 
 The frontend is exposed at NodePort `30281`. It proxies `/api` internally to the backend Kubernetes service, so the production browser client can keep using the relative `/api` endpoint without an ingress. Configure your node-level reverse proxy or firewall to expose this port as appropriate.
 
-Install the HashiCorp Vault plugin and configure the existing Jenkins Vault AppRole credential with ID `jenkins-vault-approle`. The pipeline uses it to read application secrets from `https://vault.invadersam.cloud`. Docker Hub remains a Jenkins-owned delivery credential, while scan ingestion, MongoDB, JWT signing, and bootstrap administration are application secrets in Vault. The complete KV v2 secret specification, least-privilege policy, and AppRole settings are in [docs/vault-jenkins.md](docs/vault-jenkins.md).
+Install the HashiCorp Vault plugin and configure the existing Jenkins Vault AppRole credential with ID `jenkins-vault-approle`. The pipeline uses it to read deployment-specific application secrets from `https://vault.invadersam.cloud`. Docker Hub and the shared scan-ingestion key remain Jenkins-owned credentials, while MongoDB, JWT signing, and bootstrap administration are application secrets in Vault. The complete KV v2 secret specification, least-privilege policy, and AppRole settings are in [docs/vault-jenkins.md](docs/vault-jenkins.md).
 
 | Jenkins credential ID | Type | Purpose |
 | --- | --- | --- |
 | `jenkins-vault-approle` | HashiCorp Vault AppRole | Authenticates the Vault plugin to read application secrets. |
 | `docker-hub-pat` | Username with password | Publishes backend and frontend images to Docker Hub. |
+| `security-reports-ingest-api-key` | Secret text | Shared Security Reports ingestion API key for Jenkins pipelines. |
 
 The pipeline tests the workspace, generates and archives Semgrep/Trivy JSON reports, reads each secret from Vault only in the stage that needs it, uploads reports to the reports API, builds and pushes immutable Docker tags plus `latest`, creates Kubernetes secrets, and waits for MongoDB, backend, and frontend rollouts.
 

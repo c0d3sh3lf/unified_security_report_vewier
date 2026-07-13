@@ -8,6 +8,7 @@ pipeline {
     IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     K8S_NAMESPACE = 'security-reports'
     DOCKER_CREDS_ID = 'docker-hub-pat'
+    REPORTS_API_KEY_CREDENTIAL_ID = 'security-reports-ingest-api-key'
     REPORTS_API_URL = 'https://ci-reports.invadersam.cloud/api'
     VAULT_URL = 'https://vault.invadersam.cloud'
     VAULT_CREDENTIAL_ID = 'jenkins-vault-approle'
@@ -93,15 +94,7 @@ pipeline {
 
     stage('Upload Security Reports') {
       steps {
-        withVault([configuration: [
-          vaultUrl: env.VAULT_URL,
-          vaultCredentialId: env.VAULT_CREDENTIAL_ID,
-          engineVersion: 2
-        ], vaultSecrets: [[
-          path: env.VAULT_SECRET_PATH,
-          engineVersion: 2,
-          secretValues: [[envVar: 'REPORTS_API_KEY', vaultKey: 'reports_ingest_api_key']]
-        ]]]) {
+        withCredentials([string(credentialsId: "${env.REPORTS_API_KEY_CREDENTIAL_ID}", variable: 'REPORTS_API_KEY')]) {
           sh '''
             set -eu
             upload_report() {
