@@ -5,6 +5,7 @@ export type ParsedReport = { tool: 'trivy' | 'semgrep'; artifact: string; findin
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown) => typeof value === 'string' ? value : value == null ? '' : String(value);
 const severity = (value: unknown) => { const normalized = text(value).toLowerCase(); return ['critical', 'high', 'medium', 'low', 'info'].includes(normalized) ? normalized : 'unknown'; };
+const semgrepSeverity = (value: unknown) => ({ info: 'low', warning: 'medium', error: 'high' }[text(value).toLowerCase()] ?? severity(value));
 
 export const detectTool = (payload: unknown): 'trivy' | 'semgrep' => {
   const root = record(payload);
@@ -31,7 +32,7 @@ export const parseReport = (payload: unknown, requestedTool?: 'trivy' | 'semgrep
   const entries = Array.isArray(root.results) ? root.results : [];
   const findings = entries.map((entry) => {
     const item = record(entry); const extra = record(item.extra); const start = record(item.start); const metadata = record(extra.metadata);
-    return { identifier: text(item.check_id) || 'semgrep-finding', title: text(extra.message) || text(item.check_id), severity: severity(extra.severity), category: text(metadata.category) || 'security', target: text(item.path), location: `${text(item.path)}:${text(start.line) || '1'}`, description: text(extra.message), reference: text(metadata.source || (metadata.references as unknown[] | undefined)?.[0]), metadata: item };
+    return { identifier: text(item.check_id) || 'semgrep-finding', title: text(extra.message) || text(item.check_id), severity: semgrepSeverity(extra.severity), category: text(metadata.category) || 'security', target: text(item.path), location: `${text(item.path)}:${text(start.line) || '1'}`, description: text(extra.message), reference: text(metadata.source || (metadata.references as unknown[] | undefined)?.[0]), metadata: item };
   });
   return { tool, artifact: '', findings, scannedAt: new Date() };
 };

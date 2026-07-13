@@ -5,8 +5,12 @@ describe('report parser', () => {
     const parsed = parseReport({ ArtifactName: 'app:1', Results: [{ Target: 'package-lock.json', Vulnerabilities: [{ VulnerabilityID: 'CVE-1', PkgName: 'lib', Title: 'Issue', Severity: 'HIGH' }], Misconfigurations: [{ ID: 'DS001', Title: 'Config issue', Severity: 'LOW' }] }] });
     expect(parsed.tool).toBe('trivy'); expect(parsed.findings).toHaveLength(2); expect(parsed.findings[0].severity).toBe('high');
   });
-  it('normalizes Semgrep findings', () => {
-    const parsed = parseReport({ version: '1.0', results: [{ check_id: 'rule-id', path: 'src/app.ts', start: { line: 4 }, extra: { message: 'Unsafe call', severity: 'WARNING', metadata: { category: 'security' } } }] });
-    expect(parsed.tool).toBe('semgrep'); expect(parsed.findings[0].location).toBe('src/app.ts:4'); expect(parsed.findings[0].severity).toBe('unknown');
+  it('maps legacy Semgrep OSS severities to modern severity levels', () => {
+    const parsed = parseReport({ version: '1.0', results: [
+      { check_id: 'info-rule', path: 'src/info.ts', start: { line: 1 }, extra: { message: 'Info finding', severity: 'INFO', metadata: { category: 'security' } } },
+      { check_id: 'warning-rule', path: 'src/warning.ts', start: { line: 2 }, extra: { message: 'Warning finding', severity: 'WARNING', metadata: { category: 'security' } } },
+      { check_id: 'error-rule', path: 'src/error.ts', start: { line: 3 }, extra: { message: 'Error finding', severity: 'ERROR', metadata: { category: 'security' } } }
+    ] });
+    expect(parsed.tool).toBe('semgrep'); expect(parsed.findings.map((finding) => finding.severity)).toEqual(['low', 'medium', 'high']); expect(parsed.findings[1].location).toBe('src/warning.ts:2');
   });
 });
