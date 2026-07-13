@@ -13,6 +13,8 @@ spec:
       labels:
         app: frontend
     spec:
+      imagePullSecrets:
+        - name: dockerhub-registry
       securityContext:
         runAsNonRoot: true
         runAsUser: 101

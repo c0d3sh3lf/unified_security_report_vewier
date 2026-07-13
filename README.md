@@ -137,6 +137,8 @@ Install the HashiCorp Vault plugin and configure the existing Jenkins Vault AppR
 
 The pipeline validates the workspace in an ephemeral Node container, generates and archives Semgrep/Trivy JSON reports, reads deployment secrets from Vault only in the stage that needs them, builds and pushes immutable Docker tags plus `latest`, creates Kubernetes secrets, and waits for MongoDB, backend, and frontend rollouts. Report upload is not enabled in the current pipeline.
 
+During deployment, the pipeline creates or updates the `dockerhub-registry` image-pull secret from the Jenkins `docker-hub-pat` credential. Both application deployments reference that secret, allowing Kubernetes to pull private Docker Hub images.
+
 ## Deployment checklist
 
 - [ ] Create the Docker Hub repositories `invad3rsam/unified-security-reports-backend` and `invad3rsam/unified-security-reports-frontend`, or update their names in `Jenkinsfile`.

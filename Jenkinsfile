@@ -171,36 +171,44 @@ pipeline {
             [envVar: 'DEFAULT_ADMIN_PASSWORD', vaultKey: 'default_admin_password']
           ]
         ]]]) {
-          sh '''
-            set -eu
-            set +x
-            umask 077
-            secret_dir="$(mktemp -d)"
-            trap 'rm -rf "$secret_dir"' EXIT
-            printf '%s' "$MONGO_ROOT_PASSWORD" > "$secret_dir/MONGO_ROOT_PASSWORD"
-            printf '%s' "$JWT_SECRET" > "$secret_dir/JWT_SECRET"
-            printf '%s' "$DEFAULT_ADMIN_PASSWORD" > "$secret_dir/DEFAULT_ADMIN_PASSWORD"
-            encoded_mongo_password="$(printf '%s' "$MONGO_ROOT_PASSWORD" | jq -sRr '@uri')"
-            MONGO_URI="mongodb://securityreports:$encoded_mongo_password@mongo:27017/security_reports?authSource=admin"
-            printf '%s' "$MONGO_URI" > "$secret_dir/MONGO_URI"
-            kubectl apply -f k8s/00-namespace.yaml
-            kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-db-secrets \
-              --from-file=MONGO_ROOT_PASSWORD="$secret_dir/MONGO_ROOT_PASSWORD" \
-              --dry-run=client -o yaml | kubectl apply -f -
-            kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-secrets \
-              --from-file=MONGO_URI="$secret_dir/MONGO_URI" \
-              --from-file=JWT_SECRET="$secret_dir/JWT_SECRET" \
-              --from-file=DEFAULT_ADMIN_PASSWORD="$secret_dir/DEFAULT_ADMIN_PASSWORD" \
-              --dry-run=client -o yaml | kubectl apply -f -
-            for file in k8s/01-config.yaml k8s/02-mongo.yaml k8s/03-backend.yaml k8s/04-frontend.yaml; do
-              envsubst < "$file" | kubectl apply -f - -n "$K8S_NAMESPACE"
-            done
-            kubectl -n "$K8S_NAMESPACE" set image deployment/backend backend="$BACKEND_IMAGE:$IMAGE_TAG"
-            kubectl -n "$K8S_NAMESPACE" set image deployment/frontend frontend="$FRONTEND_IMAGE:$IMAGE_TAG"
-            kubectl -n "$K8S_NAMESPACE" rollout status deployment/mongo --timeout=180s
-            kubectl -n "$K8S_NAMESPACE" rollout status deployment/backend --timeout=180s
-            kubectl -n "$K8S_NAMESPACE" rollout status deployment/frontend --timeout=180s
-          '''
+          withCredentials([usernamePassword(credentialsId: "${env.DOCKER_CREDS_ID}", usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+            sh '''
+              set -eu
+              set +x
+              umask 077
+              secret_dir="$(mktemp -d)"
+              trap 'rm -rf "$secret_dir"' EXIT
+              printf '%s' "$MONGO_ROOT_PASSWORD" > "$secret_dir/MONGO_ROOT_PASSWORD"
+              printf '%s' "$JWT_SECRET" > "$secret_dir/JWT_SECRET"
+              printf '%s' "$DEFAULT_ADMIN_PASSWORD" > "$secret_dir/DEFAULT_ADMIN_PASSWORD"
+              encoded_mongo_password="$(printf '%s' "$MONGO_ROOT_PASSWORD" | jq -sRr '@uri')"
+              MONGO_URI="mongodb://securityreports:$encoded_mongo_password@mongo:27017/security_reports?authSource=admin"
+              printf '%s' "$MONGO_URI" > "$secret_dir/MONGO_URI"
+              kubectl apply -f k8s/00-namespace.yaml
+              kubectl -n "$K8S_NAMESPACE" create secret docker-registry dockerhub-registry \
+                --docker-server=https://index.docker.io/v1/ \
+                --docker-username="$DOCKERHUB_USERNAME" \
+                --docker-password="$DOCKERHUB_TOKEN" \
+                --docker-email=unused@example.invalid \
+                --dry-run=client -o yaml | kubectl apply -f -
+              kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-db-secrets \
+                --from-file=MONGO_ROOT_PASSWORD="$secret_dir/MONGO_ROOT_PASSWORD" \
+                --dry-run=client -o yaml | kubectl apply -f -
+              kubectl -n "$K8S_NAMESPACE" create secret generic security-reports-secrets \
+                --from-file=MONGO_URI="$secret_dir/MONGO_URI" \
+                --from-file=JWT_SECRET="$secret_dir/JWT_SECRET" \
+                --from-file=DEFAULT_ADMIN_PASSWORD="$secret_dir/DEFAULT_ADMIN_PASSWORD" \
+                --dry-run=client -o yaml | kubectl apply -f -
+              for file in k8s/01-config.yaml k8s/02-mongo.yaml k8s/03-backend.yaml k8s/04-frontend.yaml; do
+                envsubst < "$file" | kubectl apply -f - -n "$K8S_NAMESPACE"
+              done
+              kubectl -n "$K8S_NAMESPACE" set image deployment/backend backend="$BACKEND_IMAGE:$IMAGE_TAG"
+              kubectl -n "$K8S_NAMESPACE" set image deployment/frontend frontend="$FRONTEND_IMAGE:$IMAGE_TAG"
+              kubectl -n "$K8S_NAMESPACE" rollout status deployment/mongo --timeout=180s
+              kubectl -n "$K8S_NAMESPACE" rollout status deployment/backend --timeout=180s
+              kubectl -n "$K8S_NAMESPACE" rollout status deployment/frontend --timeout=180s
+            '''
+          }
         }
       }
     }
